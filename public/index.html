@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Conferência</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Video Conferência</h1>
+    
+    <div class="room-controls">
+      <input type="text" id="roomId" placeholder="Digite o ID da sala">
+      <button id="joinBtn">Entrar na Sala</button>
+      <button id="createBtn">Criar Sala</button>
+    </div>
+    
+    <div class="video-container">
+      <video id="localVideo" autoplay muted></video>
+      <video id="remoteVideo" autoplay></video>
+    </div>
+    
+    <div class="controls">
+      <button id="muteBtn">Mutar</button>
+      <button id="videoBtn">Desligar Vídeo</button>
+      <button id="shareBtn">Compartilhar Tela</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
