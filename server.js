@@ -17,24 +17,27 @@ app.get('/', (req, res) => {
 
 // Configuração do Socket.io
 io.on('connection', (socket) => {
-  console.log('Novo usuário conectado:', socket.id);
-
-  // Quando um usuário quer se juntar a uma sala
-  socket.on('join-room', (roomId, userId) => {
-    socket.join(roomId);
-    socket.to(roomId).emit('user-connected', userId);
-
-    // Quando o usuário desconectar
-    socket.on('disconnect', () => {
-      socket.to(roomId).emit('user-disconnected', userId);
+    console.log('Novo usuário conectado:', socket.id);
+  
+    socket.on('join-room', (roomId, userId) => {
+      socket.join(roomId);
+      console.log(`Usuário ${userId} entrou na sala ${roomId}`);
+      
+      // Notifica os outros usuários na sala
+      socket.to(roomId).emit('user-connected', userId);
+      
+      // Quando recebemos um sinal de um usuário, encaminhamos para o destinatário
+      socket.on('signal', ({ to, from, signal }) => {
+        console.log(`Enviando sinal de ${from} para ${to}`);
+        io.to(to).emit('signal', { from, signal });
+      });
+  
+      socket.on('disconnect', () => {
+        console.log(`Usuário ${userId} desconectado`);
+        socket.to(roomId).emit('user-disconnected', userId);
+      });
     });
   });
-
-  // Enviar sinal de oferta/resposta entre peers
-  socket.on('signal', (to, from, signal) => {
-    io.to(to).emit('signal', from, signal);
-  });
-});
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {

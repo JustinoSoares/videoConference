@@ -1,3 +1,5 @@
+// Substitua todo o conteúdo do main.js por este código:
+
 document.addEventListener('DOMContentLoaded', () => {
     // Elementos DOM
     const roomIdInput = document.getElementById('roomId');
@@ -9,44 +11,53 @@ document.addEventListener('DOMContentLoaded', () => {
     const videoBtn = document.getElementById('videoBtn');
     const shareBtn = document.getElementById('shareBtn');
   
-    // Configurações
+    // Variáveis de estado
     let localStream;
-    let remoteStream;
     let peerConnection;
     let roomId;
+    let socket;
     let isMuted = false;
     let isVideoOff = false;
-    let isScreenSharing = false;
-    let socket;
+    let currentUserId;
   
     // Inicializar Socket.io
     function initSocket() {
-      socket = io();
+      socket = io("https://8b81-102-214-36-208.ngrok-free.app");
+  
+      socket.on('connect', () => {
+        currentUserId = socket.id;
+        console.log('Conectado com ID:', currentUserId);
+        enableControls();
+      });
   
       socket.on('user-connected', (userId) => {
-        console.log('Usuário conectado:', userId);
-        createPeerConnection();
+        console.log('Usuário remoto conectado:', userId);
+        if (userId !== currentUserId) {
+          createPeerConnection();
+        }
       });
   
       socket.on('user-disconnected', (userId) => {
-        console.log('Usuário desconectado:', userId);
+        console.log('Usuário remoto desconectado:', userId);
         if (peerConnection) {
           peerConnection.close();
+          peerConnection = null;
         }
         remoteVideo.srcObject = null;
       });
   
-      socket.on('signal', (from, signal) => {
-        if (from !== socket.id) {
-          if (signal.type === 'offer') {
-            handleOffer(signal);
-          } else if (signal.type === 'answer') {
-            handleAnswer(signal);
-          } else if (signal.type === 'candidate') {
-            handleCandidate(signal);
-          }
+      socket.on('signal', ({ from, signal }) => {
+        if (from !== currentUserId) {
+          handleSignal(signal);
         }
       });
+    }
+  
+    // Habilitar controles
+    function enableControls() {
+      muteBtn.disabled = false;
+      videoBtn.disabled = false;
+      shareBtn.disabled = false;
     }
   
     // Inicializar mídia local
@@ -57,8 +68,10 @@ document.addEventListener('DOMContentLoaded', () => {
           audio: true 
         });
         localVideo.srcObject = localStream;
+        console.log('Stream local obtido com sucesso');
       } catch (err) {
         console.error('Erro ao acessar mídia:', err);
+        alert('Não foi possível acessar a câmera/microfone. Verifique as permissões.');
       }
     }
   
@@ -81,70 +94,78 @@ document.addEventListener('DOMContentLoaded', () => {
   
       // Receber stream remoto
       peerConnection.ontrack = (event) => {
+        console.log('Recebendo stream remoto');
         remoteVideo.srcObject = event.streams[0];
       };
   
       // Tratar ICE candidates
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          socket.emit('signal', roomId, socket.id, {
-            type: 'candidate',
-            candidate: event.candidate
+          console.log('Enviando ICE candidate');
+          socket.emit('signal', { 
+            to: roomId, 
+            from: currentUserId, 
+            signal: {
+              type: 'candidate',
+              candidate: event.candidate
+            }
           });
         }
       };
+  
+      // Se somos o segundo usuário a entrar, criamos uma oferta
+      createOffer();
     }
   
     // Criar oferta
     async function createOffer() {
       try {
+        console.log('Criando oferta...');
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
         
-        socket.emit('signal', roomId, socket.id, {
-          type: 'offer',
-          sdp: offer.sdp
+        socket.emit('signal', { 
+          to: roomId, 
+          from: currentUserId, 
+          signal: {
+            type: 'offer',
+            sdp: offer.sdp
+          }
         });
       } catch (err) {
         console.error('Erro ao criar oferta:', err);
       }
     }
   
-    // Tratar oferta recebida
-    async function handleOffer(offer) {
-      if (!peerConnection) {
-        createPeerConnection();
-      }
-      
+    // Tratar sinal recebido
+    async function handleSignal(signal) {
       try {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        
-        socket.emit('signal', roomId, socket.id, {
-          type: 'answer',
-          sdp: answer.sdp
-        });
+        if (signal.type === 'offer') {
+          console.log('Recebida oferta, criando resposta...');
+          if (!peerConnection) {
+            createPeerConnection();
+          }
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(signal));
+          const answer = await peerConnection.createAnswer();
+          await peerConnection.setLocalDescription(answer);
+          
+          socket.emit('signal', { 
+            to: roomId, 
+            from: currentUserId, 
+            signal: {
+              type: 'answer',
+              sdp: answer.sdp
+            }
+          });
+        } else if (signal.type === 'answer') {
+          console.log('Recebida resposta...');
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(signal));
+        } else if (signal.type === 'candidate') {
+          console.log('Recebido ICE candidate...');
+          await peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        }
       } catch (err) {
-        console.error('Erro ao tratar oferta:', err);
-      }
-    }
-  
-    // Tratar resposta recebida
-    async function handleAnswer(answer) {
-      try {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-      } catch (err) {
-        console.error('Erro ao tratar resposta:', err);
-      }
-    }
-  
-    // Tratar ICE candidate recebido
-    async function handleCandidate(candidate) {
-      try {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (err) {
-        console.error('Erro ao tratar ICE candidate:', err);
+        console.error('Erro ao processar sinal:', err);
       }
     }
   
@@ -159,11 +180,12 @@ document.addEventListener('DOMContentLoaded', () => {
       await initLocalMedia();
       initSocket();
       
-      socket.emit('join-room', roomId, socket.id);
+      socket.emit('join-room', roomId, currentUserId);
       
-      if (isCreate) {
-        createPeerConnection();
-      }
+      // Desabilitar botões até a conexão ser estabelecida
+      muteBtn.disabled = true;
+      videoBtn.disabled = true;
+      shareBtn.disabled = true;
     }
   
     // Alternar áudio
@@ -192,67 +214,8 @@ document.addEventListener('DOMContentLoaded', () => {
   
     // Compartilhar tela
     async function toggleScreenShare() {
-      if (!isScreenSharing) {
-        try {
-          const screenStream = await navigator.mediaDevices.getDisplayMedia({ 
-            video: true,
-            audio: true 
-          });
-          
-          // Substituir a track de vídeo
-          const videoTrack = screenStream.getVideoTracks()[0];
-          const sender = peerConnection.getSenders().find(s => 
-            s.track.kind === 'video'
-          );
-          
-          if (sender) {
-            sender.replaceTrack(videoTrack);
-          }
-          
-          // Atualizar stream local
-          localStream.getVideoTracks().forEach(track => track.stop());
-          localStream.removeTrack(localStream.getVideoTracks()[0]);
-          localStream.addTrack(videoTrack);
-          localVideo.srcObject = localStream;
-          
-          // Configurar para parar o compartilhamento quando o usuário parar
-          videoTrack.onended = () => {
-            toggleScreenShare();
-          };
-          
-          isScreenSharing = true;
-          shareBtn.textContent = 'Parar Compartilhamento';
-        } catch (err) {
-          console.error('Erro ao compartilhar tela:', err);
-        }
-      } else {
-        // Voltar para a câmera
-        try {
-          const cameraStream = await navigator.mediaDevices.getUserMedia({ 
-            video: true 
-          });
-          
-          const videoTrack = cameraStream.getVideoTracks()[0];
-          const sender = peerConnection.getSenders().find(s => 
-            s.track.kind === 'video'
-          );
-          
-          if (sender) {
-            sender.replaceTrack(videoTrack);
-          }
-          
-          // Atualizar stream local
-          localStream.getVideoTracks().forEach(track => track.stop());
-          localStream.removeTrack(localStream.getVideoTracks()[0]);
-          localStream.addTrack(videoTrack);
-          localVideo.srcObject = localStream;
-          
-          isScreenSharing = false;
-          shareBtn.textContent = 'Compartilhar Tela';
-        } catch (err) {
-          console.error('Erro ao voltar para a câmera:', err);
-        }
-      }
+      // Implementação do compartilhamento de tela (opcional)
+      alert('Funcionalidade de compartilhamento de tela não implementada nesta versão');
     }
   
     // Event listeners
