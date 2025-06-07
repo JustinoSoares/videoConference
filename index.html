@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Video Conferência</title>
+</head>
+<body>
+  <h2>Local</h2>
+  <video id="localVideo" autoplay muted></video>
+
+  <h2>Remoto</h2>
+  <video id="remoteVideo" autoplay></video>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    const socket = io('https://6cd8-105-174-52-229.ngrok-free.app'); // troque pelo seu backend
+
+    const room = 'sala1';
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+
+    const peer = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+
+    socket.emit('join-room', room);
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      .then(stream => {
+        localVideo.srcObject = stream;
+        stream.getTracks().forEach(track => peer.addTrack(track, stream));
+      });
+
+    peer.onicecandidate = event => {
+      if (event.candidate) {
+        socket.emit('ice-candidate', { candidate: event.candidate, room });
+      }
+    };
+
+    peer.ontrack = event => {
+      remoteVideo.srcObject = event.streams[0];
+    };
+
+    socket.on('user-connected', async () => {
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      socket.emit('offer', { offer, room });
+    });
+
+    socket.on('offer', async data => {
+      await peer.setRemoteDescription(new RTCSessionDescription(data.offer));
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      socket.emit('answer', { answer, room });
+    });
+
+    socket.on('answer', async data => {
+      await peer.setRemoteDescription(new RTCSessionDescription(data.answer));
+    });
+
+    socket.on('ice-candidate', data => {
+      peer.addIceCandidate(new RTCIceCandidate(data.candidate));
+    });
+  </script>
+</body>
+</html>
