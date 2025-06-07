@@ -12,7 +12,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Rota principal
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  //res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  return res.json({
+    message: "My"  })
 });
 
 // Configuração do Socket.io
